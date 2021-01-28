@@ -71,12 +71,15 @@ make -j${NUMCORES} -k; make 2>&1 | tee /tmp/qtbuild.log
 make install
 ```
 
+That's it. Qt 5.15.2 should be installed in `~/Qt`.
 
-## Alternative build with optional prerequisites
+---
+
+### Alternative build with optional prerequisites
 
 Zlib and OpenSSL are required for building Qt on Linux. This is an optional step on macOS because `zlib` is bundled with Xcode and you can use native `securetransport` instead of OpenSSL. The build instructions are provided for the edge case when you'd like to follow the same build process as on linux.
 
-### Build zlib
+#### Build zlib
 
 ```bash
 rm -rf zlib*
@@ -97,7 +100,7 @@ cd ..
 cp zlib-install/lib/libzlib.a zlib-install/lib/libz.a
 ```
 
-### Build OpenSSL
+#### Build OpenSSL
 
 ```bash
 rm -f openssl-1.0.1h.tar.gz
@@ -117,7 +120,7 @@ install_name_tool \
 cd ..
 ```
 
-### Build Qt with optional prerequisites
+#### Build Qt with optional prerequisites
 
 The build process in this case is the same with the only difference in the configuration command
 
