@@ -1,88 +1,136 @@
-Script allowing to very easily build qt with openssl support on Linux, Windows or MacOSX
+# Build Qt 5.15.2 on macOS
 
-Usage
-=====
+Qt5 can be built on macOS **only** if your macOS SDK is 10.15 or lower. It will not build with the default SDK that's bundled with Xcode on Big Sur.
 
-Linux and macOS
----------------
+There are 2 ways to get older SDK on Big Sur:
 
-1. Open a terminal and copy the text below:
+1. "Official". Install an older version of Xcode that comes with the SDK you need.
+2. "Hacky". Grab an older SDK from github (for example from [this repo](https://github.com/piiq/MacOSX-SDKs)) and place it beside the latest SDK in `Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/`. After this action running `xcodebuild -showsdks` should show you 10.15 SDK available.
 
-```
-curl -s https://raw.githubusercontent.com/jcfr/qt-easy-build/5.15.1/Build-qt.sh -o Build-qt.sh && chmod u+x Build-qt.sh
-./Build-qt.sh -j 4
-```
+---
 
-To display script options:
+The build commands listed bellow are packed into a script that you can launch locally.
+Modify the script to meet your system specifics.
 
-```
-./Build-qt.sh --help
+```bash
+curl -s https://raw.githubusercontent.com/piiq/qt-easy-build/5.15.2-macOS11.1/Build-qt.sh -o Build-qt.sh
 ```
 
-Windows
--------
+For other platforms or Qt versions please refer to [this repository](https://github.com/jcfr/qt-easy-build).
 
-1. Open desired Visual Studio Command Prompt (for 64 bit Qt, use the 64 bit Command Prompt, for 32 bit Qt, use the 32 bit Command Prompt)
-2. Paste the corresponding text from the box below and press enter.
 
-* Visual Studio 2013 64-bit Release
+## Prerequisites
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Release';$qtPlatform='win32-msvc2013';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+This build process requires llvm that can be obtained from homebrew.
+
+```bash
+brew install llvm
 ```
 
-* Visual Studio 2013 64-bit Debug
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Debug';$qtPlatform='win32-msvc2013';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+### Setup build environment
+
+Copy the following line into the terminal substituting paths to the ones you have in your system.
+
+```bash
+CMAKE=/usr/local/bin/cmake
+DEPLOYMENT_TARGET=10.15
+SYSROOT=macosx10.15
+
+INSTALL_DIR=~/Qt
+QT_VERSION=5.15.2
+
+CWD=$(pwd)
+NUMCORES=`sysctl -n hw.ncpu`
 ```
 
-* Visual Studio 2012 64-bit Release
+### Build Qt
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Release';$qtPlatform='win32-msvc2012';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+```bash
+rm -f qt-everywhere-src-5.15.2.tar.gz
+rm -rf qt-everywhere-src-5.15.2
+rm -rf qt-everywhere-build-5.15.2
+mkdir qt-everywhere-build-5.15.2
+
+curl -OL https://download.qt.io/official_releases/qt/5.15/5.15.2/single/qt-everywhere-src-5.15.2.tar.xz
+MD5=`md5 ./qt-everywhere-src-5.15.2.tar.xz`
+[ $MD5 == "e1447db4f06c841d8947f0a6ce83a7b5" ] || ( echo "MD5 mismatch. Problem downloading Qt" )
+tar -xzvf qt-everywhere-src-5.15.2.tar.xz
+cd qt-everywhere-src-5.15.2
+./configure -prefix ${INSTALL_DIR} \
+  -release -opensource -confirm-license \
+  -c++std c++14 \
+  -nomake examples \
+  -nomake tests \
+  -no-rpath \
+  -silent \
+  -sdk ${SYSROOT} \
+  -no-openssl -securetransport \
+  -v
+make -j${NUMCORES} -k; make 2>&1 | tee /tmp/qtbuild.log
+make install
 ```
 
-* Visual Studio 2012 64-bit Debug
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Debug';$qtPlatform='win32-msvc2012';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+## Alternative build with optional prerequisites
+
+Zlib and OpenSSL are required for building Qt on Linux. This is an optional step on macOS because `zlib` is bundled with Xcode and you can use native `securetransport` instead of OpenSSL. The build instructions are provided for the edge case when you'd like to follow the same build process as on linux.
+
+### Build zlib
+
+```bash
+rm -rf zlib*
+mkdir zlib-install
+mkdir zlib-build
+git clone git://github.com/commontk/zlib.git
+cd zlib-build
+"${CMAKE}" -DCMAKE_BUILD_TYPE:STRING=Release \
+       -DZLIB_MANGLE_PREFIX:STRING=slicer_zlib_ \
+       -DCMAKE_INSTALL_PREFIX:PATH=${CWD}/zlib-install \
+       -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+       -DCMAKE_OSX_SYSROOT=${SYSROOT} \
+       -DCMAKE_OSX_DEPLOYMENT_TARGET=${DEPLOYMENT_TARGET} \
+       ../zlib
+make -j${NUMCORES}
+make install
+cd ..
+cp zlib-install/lib/libzlib.a zlib-install/lib/libz.a
 ```
 
-* Visual Studio 2010 64-bit Release
+### Build OpenSSL
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Release';$qtPlatform='win32-msvc2010';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+```bash
+rm -f openssl-1.0.1h.tar.gz
+rm -rf openssl-1.0.1h/
+curl -OL https://packages.kitware.com/download/item/6173/openssl-1.0.1h.tar.gz
+MD5=`md5 ./openssl-1.0.1h.tar.gz`
+[ ${MD5} == "8d6d684a9430d5cc98a62a5d8fbda8cf" ] || ( echo "MD5 mismatch. Problem downloading OpenSSL" )
+tar -xzvf openssl-1.0.1h.tar.gz
+cd openssl-1.0.1h/
+export KERNEL_BITS=64
+./config zlib -I${CWD}/zlib-install/include -L${CWD}/zlib-install/lib shared
+make -j1 build_libs  # Note that OpenSSL only builds with a single thread
+install_name_tool -id ${CWD}/openssl-1.0.1h/libcrypto.dylib ${CWD}/openssl-1.0.1h/libcrypto.dylib
+install_name_tool \
+          -change /usr/local/ssl/lib/libcrypto.1.0.0.dylib ${CWD}/openssl-1.0.1h/libcrypto.dylib \
+          -id ${CWD}/openssl-1.0.1h/libssl.dylib ${CWD}/openssl-1.0.1h/libssl.dylib
+cd ..
 ```
 
-* Visual Studio 2010 64-bit Debug
+### Build Qt with optional prerequisites
 
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Debug';$qtPlatform='win32-msvc2010';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
+The build process in this case is the same with the only difference in the configuration command
+
+```bash
+./configure -prefix ${INSTALL_DIR} \
+  -release -opensource -confirm-license \
+  -c++std c++14 \
+  -nomake examples \
+  -nomake tests \
+  -no-rpath \
+  -silent \
+  -sdk ${SYSROOT} \
+  -openssl -I ${CWD}/openssl-1.0.1h/include/openssl -L ${CWD}/openssl-1.0.1h
 ```
 
-* Visual Studio 2008 64-bit Release
-
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Release';$qtPlatform='win32-msvc2008';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
-```
-
-* Visual Studio 2008 64-bit Debug
-
-```PowerShell
-@powershell -Command "$destDir='C:\D\Support';$buildType='Debug';$qtPlatform='win32-msvc2008';$bits='64';iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/jcfr/qt-easy-build/4.8.7/windows_build_qt.ps1'))"
-```
-
-### Notes ###
-
-* the minimum glibc version [supported by QtWebEngine is 2.17](https://github.com/qt/qtwebengine/commit/6d9fe6ba35024efc8e0a26435b51e25aa3ea7f09#diff-fb760d5130a8d1bf9c6f4be03ebcdc20). This excludes building QtWebEngine on less than CentOS 7, for example (local glibc version may be checked with `ldd --version`).
-
-* `buildType` can be set to either 'Release' or 'Debug'
-
-* `bits` can be set to either '32' or '64'
-
-* The script will install [jom](http://qt-project.org/wiki/jom) downloading it from http://download.qt.io/official_releases/jom/.
-
-* Make sure that your Windows `%PATH%` environment variable does not contain any quotation marks! This
-  might break both the executables path or even the include paths and make the [CMake script fail](https://github.com/jcfr/qt-easy-build/issues/19#issuecomment-213411046).
-  Even if your `%PATH%` contains whitespaces (e.g. `C:\Program Files (x86)\...`) no quotes are needed.
+---
